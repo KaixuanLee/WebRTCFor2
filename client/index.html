@@ -95,23 +95,24 @@
 		const button = document.querySelector('.start-button');
 
 		localVideo.onloadeddata = () => {
-			message.log('播放本地视频');
+			message.log('Play local video');
 			localVideo.play();
 		}
 		remoteVideo.onloadeddata = () => {
-			message.log('播放对方视频');
+			message.log('Play remote video');
 			remoteVideo.play();
 		}
 
-		document.title = target === 'offer' ? '发起方' : '接收方';
+		document.title = target === 'offer' ? 'Receiver' : 'Sender ';
 
-		message.log('信令通道（WebSocket）创建中......');
-		const socket = new WebSocket('ws://192.168.3.169:8080');
+		message.log('（WebSocket）Creating......');
+		// const socket = new WebSocket('ws://192.168.3.169:8080');
+		const socket = new WebSocket(`ws://${window.location.hostname}:8443`);
 		socket.onopen = () => {
-			message.log('信令通道创建成功！');
+			message.log('Created successfully！');
 			target === 'offer' && (button.style.display = 'block');
 		}
-		socket.onerror = () => message.error('信令通道创建失败！');
+		socket.onerror = () => message.error('Created Failed！');
 		socket.onmessage = e => {
 			const { type, sdp, iceCandidate } = JSON.parse(e.data)
 			if (type === 'answer') {
@@ -126,25 +127,25 @@
 		};
 
 		const PeerConnection = window.RTCPeerConnection || window.mozRTCPeerConnection || window.webkitRTCPeerConnection;
-		!PeerConnection && message.error('浏览器不支持WebRTC！');
+		!PeerConnection && message.error('Your browser does not support WebRTC！');
 		const peer = new PeerConnection();
 
 		peer.ontrack = e => {
 			if (e && e.streams) {
-				message.log('收到对方音频/视频流数据...');
+				message.log('Receive audio/video streaming data from the remote side...');
 				remoteVideo.srcObject = e.streams[0];
 			}
 		};
 
 		peer.onicecandidate = e => {
 			if (e.candidate) {
-				message.log('搜集并发送候选人');
+				// message.log('onicecandidate');
 				socket.send(JSON.stringify({
 					type: `${target}_ice`,
 					iceCandidate: e.candidate
 				}));
 			} else {
-				message.log('候选人收集完成！');
+				message.log('Candidate collection completed！');
 			}
 		};
 
@@ -152,35 +153,34 @@
 			target === 'offer' && (button.style.display = 'none');
 			let stream;
 			try {
-				message.log('尝试调取本地摄像头/麦克风');
+				message.log('Try to retrieve the local camera/microphone');
 				stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-				message.log('摄像头/麦克风获取成功！');
+				message.log('Camera/Microphone acquisition successful！');
 				localVideo.srcObject = stream;
 			} catch {
-				message.error('摄像头/麦克风获取失败！');
+				message.error('Camera/Microphone acquisition failure！');
 				return;
 			}
 
-			message.log(`------ WebRTC ${target === 'offer' ? '发起方' : '接收方'}流程开始 ------`);
-			message.log('将媒体轨道添加到轨道集');
+			message.log(`------ WebRTC ${target === 'offer' ? 'offer' : 'answer'} Process Start ------`);
 			stream.getTracks().forEach(track => {
 				peer.addTrack(track, stream);
 			});
 
 			if (!offerSdp) {
-				message.log('创建本地SDP');
+				message.log('Create local SDP');
 				const offer = await peer.createOffer();
 				await peer.setLocalDescription(offer);
 				
-				message.log(`传输发起方本地SDP`);
+				message.log(`Transferring local SDP`);
 				socket.send(JSON.stringify(offer));
 			} else {
-				message.log('接收到发送方SDP');
+				message.log('Receiving the offer SDP');
 				await peer.setRemoteDescription(offerSdp);
 
-				message.log('创建接收方（应答）SDP');
+				message.log('Create Answer SDP');
 				const answer = await peer.createAnswer();
-				message.log(`传输接收方（应答）SDP`);
+				message.log(`Transmission Answer SDP`);
 				socket.send(JSON.stringify(answer));
 				await peer.setLocalDescription(answer);
 			}
